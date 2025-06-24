@@ -45,11 +45,7 @@ fn fit_c_grid(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Opt
     for i in 0..101 {
         let c = -5.0 + 10.0 * (i as f64 / 100.0);
         let y_fit = reconstruct_function(xs, c, x0, y0, x1, y1);
-        let err = xs
-            .iter()
-            .zip(ys)
-            .map(|(p, y)| (y_fit[xs.iter().position(|a| a == p).unwrap()] - y).powi(2))
-            .sum::<f64>();
+        let err = compute_rmse(&y_fit, ys);
         if err < best_err {
             best_err = err;
             best = Some(c);
@@ -68,12 +64,7 @@ fn fit_c_grid_trace(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) 
     for i in 0..(n + 1) {
         let c = start + (end - start) * (i as f64 / n as f64);
         let y_fit = reconstruct_function(xs, c, x0, y0, x1, y1);
-        let err = xs
-            .iter()
-            .zip(ys)
-            .map(|(p, y)| (y_fit[xs.iter().position(|a| a == p).unwrap()] - y).powi(2))
-            .sum::<f64>();
-
+        let err = compute_rmse(&y_fit, ys);
         trace.push([c, err])
     }
 
@@ -124,7 +115,8 @@ fn fit_c_nelder(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> O
         .map(|r| *r.state().get_param().expect("Do not fail"))
 }
 
-// Simple particle swarm optimizer (1D)
+/// Simple particle swarm optimizer (1D)
+/// TODO use argmin swarm optimizer
 fn fit_c_swarm(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Option<f64> {
     let mut rng = rand::rng();
     let swarm_size = 20;

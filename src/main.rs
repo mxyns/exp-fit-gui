@@ -90,12 +90,7 @@ impl CostFunction for FitCOp {
 
     fn cost(&self, c: &Self::Param) -> Result<Self::Output, Error> {
         let pred = reconstruct_function(&self.xs, *c, self.x0, self.y0, self.x1, self.y1);
-        let err = self
-            .ys
-            .iter()
-            .zip(pred.iter())
-            .map(|(y, p)| (y - p).powi(2))
-            .sum::<f64>();
+        let err = compute_rmse(&pred, &self.ys).powi(2);
         Ok(err)
     }
 }

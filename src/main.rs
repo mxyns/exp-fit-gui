@@ -42,8 +42,12 @@ fn compute_rmse(a: &[f64], b: &[f64]) -> f64 {
 fn fit_c_grid(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Option<f64> {
     let mut best = None;
     let mut best_err = f64::INFINITY;
-    for i in 0..101 {
-        let c = -5.0 + 10.0 * (i as f64 / 100.0);
+    let start = -100.0;
+    let end = 100.0;
+    let n = 1000;
+
+    for i in 0..(n + 1) {
+        let c = start + (end - start) * (i as f64 / n as f64);
         let y_fit = reconstruct_function(xs, c, x0, y0, x1, y1);
         let err = compute_rmse(&y_fit, ys);
         if err < best_err {
@@ -56,9 +60,9 @@ fn fit_c_grid(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Opt
 
 /// Safe bounded grid search
 fn fit_c_grid_trace(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<[f64; 2]> {
-    let start = -5.0;
-    let end = 5.0;
-    let n = 100;
+    let start = -10.0;
+    let end = 10.0;
+    let n = 5000;
     let mut trace = Vec::new();
 
     for i in 0..(n + 1) {
@@ -186,7 +190,7 @@ impl Default for MyApp {
     fn default() -> Self {
         let mut sel = HashMap::new();
         for &o in OptimizerType::all() {
-            sel.insert(o, true);
+            sel.insert(o, false);
         }
         Self {
             x0: 0.0,
@@ -222,7 +226,7 @@ impl eframe::App for MyApp {
             ui.add(egui::Slider::new(&mut self.y1, -10.0..=20.0).text("y₁"));
             ui.separator();
             ui.add(
-                egui::Slider::new(&mut self.true_c, -5.0..=5.0)
+                egui::Slider::new(&mut self.true_c, -100.0..=100.0)
                     .text("True C")
                     .step_by(0.001)
                     .drag_value_speed(0.005)

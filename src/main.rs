@@ -1,8 +1,10 @@
-use argmin::core::{CostFunction, Error, Executor, State};
+use argmin::core::{CostFunction, Error, Executor, Gradient};
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 use rand::{Rng, RngCore, SeedableRng};
 use std::collections::HashMap;
+use argmin::solver::gradientdescent::SteepestDescent;
+use argmin::solver::linesearch::MoreThuenteLineSearch;
 
 /// Model reconstruction
 fn reconstruct_function(xs: &[f64], c: f64, x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<f64> {
@@ -75,20 +77,39 @@ fn fit_c_grid_trace(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) 
     trace
 }
 
+fn fit_c_steepest_descent(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Option<f64> {
+    let problem = FitProblem {
+        xs,
+        ys,
+        x0,
+        y0,
+        x1,
+        y1,
+    };
+
+    let solver = SteepestDescent::new(MoreThuenteLineSearch::default());
+    let res = Executor::new(problem, solver)
+        .configure(|state|state.param(0.0001).max_iters(1000))
+        .run()
+        .unwrap();
+
+    res.state.best_param
+}
+
 /// Nelder-Mead via argmin
 use argmin::solver::neldermead::NelderMead;
 use rand::prelude::StdRng;
 
-struct FitCOp {
-    xs: Vec<f64>,
-    ys: Vec<f64>,
+struct FitProblem<'a> {
+    xs: &'a [f64],
+    ys: &'a [f64],
     x0: f64,
     y0: f64,
     x1: f64,
     y1: f64,
 }
 
-impl CostFunction for FitCOp {
+impl CostFunction for FitProblem<'_> {
     type Param = f64;
     type Output = f64;
 
@@ -99,10 +120,39 @@ impl CostFunction for FitCOp {
     }
 }
 
+impl Gradient for FitProblem<'_> {
+    type Param = f64;
+    type Gradient = f64;
+
+    fn gradient(&self, c: &Self::Param) -> Result<Self::Gradient, Error> {
+        let c = *c;
+        let exp_cx1 = (c * self.x1).exp();
+        let denom = 1.0 - exp_cx1;
+        if denom.abs() < 1e-12 {
+            return Ok(0.0);
+        }
+
+        let mut grad = 0.0;
+        for (&x, &y) in self.xs.iter().zip(self.ys) {
+            let exp_cx_x0 = (c * (x - self.x0)).exp();
+
+            let numerator = self.y1
+                * (self.x1 * (1.0 - exp_cx_x0) * exp_cx1
+                - (1.0 - exp_cx1) * (x - self.x0) * exp_cx_x0);
+            let dfdc = numerator / denom.powi(2);
+
+            let fx = self.y1 / (exp_cx1 - 1.0) * (exp_cx_x0 - 1.0) + self.y0;
+            grad += 2.0 * (fx - y) * dfdc;
+        }
+
+        Ok(grad / self.xs.len() as f64)
+    }
+}
+
 fn fit_c_nelder(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> Option<f64> {
-    let operator = FitCOp {
-        xs: xs.to_vec(),
-        ys: ys.to_vec(),
+    let operator = FitProblem {
+        xs,
+        ys,
         x0,
         y0,
         x1,
@@ -111,7 +161,7 @@ fn fit_c_nelder(xs: &[f64], ys: &[f64], x0: f64, y0: f64, x1: f64, y1: f64) -> O
     let solver = NelderMead::new(vec![0.5, 1.0]);
     let res = Executor::new(operator, solver).run();
     res.ok()
-        .map(|r| *r.state().get_param().expect("Do not fail"))
+        .map(|r| r.state().best_param.expect("Do not fail"))
 }
 
 /// Simple particle swarm optimizer (1D)
@@ -148,17 +198,19 @@ enum OptimizerType {
     NelderMead,
     Grid,
     Swarm,
+    SteepestDescent
 }
 
 impl OptimizerType {
     fn all() -> &'static [OptimizerType] {
-        &[Self::NelderMead, Self::Grid, Self::Swarm]
+        &[Self::NelderMead, Self::Grid, Self::Swarm, Self::SteepestDescent]
     }
     fn name(&self) -> &'static str {
         match self {
             Self::NelderMead => "Nelder-Mead",
             Self::Grid => "Grid Search",
             Self::Swarm => "Swarm",
+            Self::SteepestDescent => "Steepest Descent"
         }
     }
 }
@@ -323,6 +375,9 @@ impl eframe::App for MyApp {
                     OptimizerType::Swarm => {
                         fit_c_swarm(&self.xs, &self.ys_noisy, self.x0, self.y0, self.x1, self.y1)
                             .unwrap_or(f64::NAN)
+                    }
+                    OptimizerType::SteepestDescent => {
+                        fit_c_steepest_descent(&self.xs, &self.ys_noisy, self.x0, self.y0, self.x1, self.y1).unwrap_or(f64::NAN)
                     }
                 };
                 let f = reconstruct_function(&self.xs, c_opt, self.x0, self.y0, self.x1, self.y1);
